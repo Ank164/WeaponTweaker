@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.3";
+        Text = "Weapon Tweaker 1.1.4";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);

@@ -11,11 +11,12 @@ internal sealed class SettingsForm : Form
     public SettingsForm(AppSettings settings)
     {
         Text = "Weapon Tweaker Settings";
-        Width = 720;
-        Height = 245;
-        MinimumSize = new Size(580, 245);
+        Width = 760;
+        Height = 310;
+        MinimumSize = new Size(640, 310);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
+        AutoScaleMode = AutoScaleMode.Dpi;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
@@ -56,7 +57,11 @@ internal sealed class SettingsForm : Form
         };
         layout.Controls.Add(hint, 0, 2);
         layout.SetColumnSpan(hint, 3);
-        var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill };
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true, FlowDirection = FlowDirection.RightToLeft,
+            Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 0)
+        };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
         layout.Controls.Add(buttons, 0, 4);

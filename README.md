@@ -34,6 +34,10 @@ The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
 
+### 1.1.4
+
+- Fixed clipped Save and Cancel buttons in the Settings dialog at scaled Windows display settings.
+
 ### 1.1.3
 
 - Replaced the confusing Settings submenu with one dialog containing `Output folder` and `Profile folder` fields; blank fields use defaults.
