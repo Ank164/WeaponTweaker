@@ -25,7 +25,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.0";
+        Text = "Weapon Tweaker 1.0.1";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -215,7 +215,7 @@ internal sealed class MainForm : Form
         try
         {
             ToggleBusy(true, "Writing patch…");
-            await Task.Run(() => WritePatch(dialog.FileName, changed, _source));
+            await Task.Run(() => WritePatch(dialog.FileName, changed, _source, Path.GetDirectoryName(_sourcePath)!));
             _status.Text = $"Saved {changed.Length:N0} weapon overrides to {dialog.FileName}";
             MessageBox.Show(this, $"Patch created successfully.\n\n{dialog.FileName}\n\nEnable it after the source plugin in MO2.", "Patch saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -227,7 +227,7 @@ internal sealed class MainForm : Form
         finally { ToggleBusy(false); }
     }
 
-    internal static void WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, ISkyrimModGetter source)
+    internal static void WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, ISkyrimModGetter source, string dataFolder)
     {
         var modKey = ModKey.FromFileName(Path.GetFileName(outputPath));
         var patch = new SkyrimMod(modKey, SkyrimRelease.SkyrimSE) { IsSmallMaster = true };
@@ -244,7 +244,8 @@ internal sealed class MainForm : Form
             weapon.Data.Reach = row.Reach;
             weapon.Critical.Damage = checked((ushort)row.CriticalDamage);
         }
-        patch.BeginWrite.ToPath(outputPath).WithLoadOrder(source).Write();
+        var loadOrder = source.MasterReferences.Select(x => x.Master).Append(source.ModKey).ToArray();
+        patch.BeginWrite.ToPath(outputPath).WithLoadOrder(loadOrder).WithDataFolder(dataFolder).Write();
     }
 
     internal static ISkyrimModDisposableGetter OpenPlugin(string path)

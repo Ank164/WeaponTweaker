@@ -29,3 +29,9 @@ dotnet publish -c Release -o Distribution
 ```
 
 The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
+
+## Changelog
+
+### 1.0.1
+
+- Fixed patch saving when a weapon or its source plugin references `Skyrim.esm` or another master.

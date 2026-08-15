@@ -12,35 +12,41 @@ internal static class SelfTest
         Directory.CreateDirectory(folder);
         try
         {
+            var masterPath = Path.Combine(folder, "TestMaster.esm");
             var sourcePath = Path.Combine(folder, "TestWeapons.esp");
             var patchPath = Path.Combine(folder, "TestWeapons - Weapon Tweaks.esp");
+            var master = new SkyrimMod(ModKey.FromFileName("TestMaster.esm"), SkyrimRelease.SkyrimSE) { IsMaster = true };
+            var masterWeapon = master.Weapons.AddNew();
+            masterWeapon.EditorID = "WT_TestSword";
+            masterWeapon.Name = "Test Sword";
+            masterWeapon.BasicStats = new WeaponBasicStats { Damage = 10, Weight = 8, Value = 50 };
+            masterWeapon.Data = new WeaponData { Speed = 1.0f, Reach = 1.0f };
+            masterWeapon.Critical = new CriticalData { Damage = 5 };
+            master.BeginWrite.ToPath(masterPath).WithNoLoadOrder().Write();
+
             var source = new SkyrimMod(ModKey.FromFileName("TestWeapons.esp"), SkyrimRelease.SkyrimSE);
-            var weapon = source.Weapons.AddNew();
-            weapon.EditorID = "WT_TestSword";
-            weapon.Name = "Test Sword";
-            weapon.BasicStats = new WeaponBasicStats { Damage = 10, Weight = 8, Value = 50 };
-            weapon.Data = new WeaponData { Speed = 1.0f, Reach = 1.0f };
-            weapon.Critical = new CriticalData { Damage = 5 };
-            source.BeginWrite.ToPath(sourcePath).WithNoLoadOrder().Write();
+            source.Weapons.GetOrAddAsOverride(masterWeapon).BasicStats!.Damage = 11;
+            source.BeginWrite.ToPath(sourcePath).WithLoadOrder(master).Write();
 
             using var loaded = MainForm.OpenPlugin(sourcePath);
             var loadedWeapon = loaded.Weapons.Single();
             var row = new WeaponRow
             {
                 Source = loadedWeapon, FormKey = loadedWeapon.FormKey, Name = loadedWeapon.Name?.String ?? "",
-                EditorID = loadedWeapon.EditorID ?? "", Damage = 25, OriginalDamage = 10,
+                EditorID = loadedWeapon.EditorID ?? "", Damage = 25, OriginalDamage = 11,
                 Speed = 1.35f, OriginalSpeed = 1.0f, Reach = 1.1f, OriginalReach = 1.0f,
                 Weight = 7, OriginalWeight = 8, Value = 80, OriginalValue = 50,
                 CriticalDamage = 12, OriginalCriticalDamage = 5
             };
-            MainForm.WritePatch(patchPath, [row], loaded);
+            MainForm.WritePatch(patchPath, [row], loaded, folder);
 
             using var result = MainForm.OpenPlugin(patchPath);
             var patched = result.Weapons.Single();
             var ok = patched.BasicStats?.Damage == 25 && patched.Data?.Speed == 1.35f &&
                      patched.Data?.Reach == 1.1f && patched.BasicStats?.Weight == 7 &&
                      patched.BasicStats?.Value == 80 && patched.Critical?.Damage == 12 &&
-                     result.IsSmallMaster && File.Exists(sourcePath);
+                     result.IsSmallMaster && result.MasterReferences.Any(x => x.Master == master.ModKey) &&
+                     File.Exists(sourcePath) && File.Exists(masterPath);
             Console.WriteLine(ok ? "SELF-TEST PASSED" : "SELF-TEST FAILED");
             return ok ? 0 : 1;
         }
