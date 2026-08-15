@@ -16,6 +16,8 @@ It can open one plugin for a fast focused edit, or optionally load every winning
 
 Weapon Tweaker never overwrites the source plugin. It writes only changed weapon overrides into a new ESL-flagged ESP.
 
+To extend an existing Weapon Tweaker patch, choose that ESP in the Save dialog. The app preserves its existing records, appends or updates the changed weapons, and creates a timestamped backup before replacing it.
+
 The locally deployed executable is located at:
 
 `D:\Games\Modding\Tools\Weapon Tweaker\WeaponTweaker.exe`
@@ -33,6 +35,11 @@ dotnet publish -c Release -o Distribution
 The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
+
+### 1.2.0
+
+- Added safe appending to existing patch plugins while preserving their current records and header flags.
+- Existing patches receive a timestamped backup and are replaced only after a complete temporary plugin is written successfully.
 
 ### 1.1.4
 

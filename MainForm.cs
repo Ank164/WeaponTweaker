@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.4";
+        Text = "Weapon Tweaker 1.2.0";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -439,7 +439,8 @@ internal sealed class MainForm : Form
         using var dialog = new SaveFileDialog
         {
             Filter = "Skyrim plugin (*.esp)|*.esp", FileName = _suggestedPatchName,
-            InitialDirectory = initialDirectory, Title = "Save weapon tweak patch"
+            InitialDirectory = initialDirectory, Title = "Create or append to a weapon tweak patch",
+            OverwritePrompt = false
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         if (_sourcePath is not null && Path.GetFullPath(dialog.FileName).Equals(_sourcePath, StringComparison.OrdinalIgnoreCase))
@@ -447,12 +448,19 @@ internal sealed class MainForm : Form
             MessageBox.Show(this, "Choose a different filename. Weapon Tweaker never overwrites the source plugin.", "Source plugin protected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+        var appending = File.Exists(dialog.FileName);
+        if (appending && MessageBox.Show(this,
+                $"Append these {changed.Length:N0} changed weapon record{(changed.Length == 1 ? "" : "s")} to the existing patch?\n\n{dialog.FileName}\n\nThe existing plugin will be backed up first.",
+                "Append to existing patch", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         try
         {
-            ToggleBusy(true, "Writing patch…");
-            await Task.Run(() => WritePatch(dialog.FileName, changed, _writeLoadOrder, _dataFolder));
-            _status.Text = $"Saved {changed.Length:N0} weapon overrides to {dialog.FileName}";
-            MessageBox.Show(this, $"Patch created successfully.\n\n{dialog.FileName}\n\nEnable it after the source plugin in MO2.", "Patch saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ToggleBusy(true, appending ? "Appending to patch…" : "Writing patch…");
+            var backupPath = await Task.Run(() => WritePatch(dialog.FileName, changed, _writeLoadOrder, _dataFolder));
+            _status.Text = $"{(appending ? "Appended" : "Saved")} {changed.Length:N0} weapon overrides to {dialog.FileName}";
+            var backupText = backupPath is null ? "" : $"\n\nBackup created:\n{backupPath}";
+            MessageBox.Show(this,
+                $"Patch {(appending ? "updated" : "created")} successfully.\n\n{dialog.FileName}{backupText}\n\nEnable it after the source plugin in MO2.",
+                appending ? "Patch updated" : "Patch saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
@@ -462,10 +470,13 @@ internal sealed class MainForm : Form
         finally { ToggleBusy(false); }
     }
 
-    internal static void WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, IReadOnlyCollection<ModKey> loadOrder, string dataFolder)
+    internal static string? WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, IReadOnlyCollection<ModKey> loadOrder, string dataFolder)
     {
         var modKey = ModKey.FromFileName(Path.GetFileName(outputPath));
-        var patch = new SkyrimMod(modKey, SkyrimRelease.SkyrimSE) { IsSmallMaster = true };
+        var appending = File.Exists(outputPath);
+        var patch = appending
+            ? OpenMutablePlugin(outputPath, dataFolder)
+            : new SkyrimMod(modKey, SkyrimRelease.SkyrimSE) { IsSmallMaster = true };
         foreach (var row in changed)
         {
             var weapon = patch.Weapons.GetOrAddAsOverride(row.Source);
@@ -479,7 +490,40 @@ internal sealed class MainForm : Form
             weapon.Data.Reach = row.Reach;
             weapon.Critical.Damage = checked((ushort)row.CriticalDamage);
         }
-        patch.BeginWrite.ToPath(outputPath).WithLoadOrder(loadOrder).WithDataFolder(dataFolder).Write();
+        var writeOrder = loadOrder.Concat(patch.MasterReferences.Select(x => x.Master)).Distinct().ToArray();
+        var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
+        var tempDirectory = Path.Combine(directory, $".WeaponTweaker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        var tempPath = Path.Combine(tempDirectory, Path.GetFileName(outputPath));
+        string? backupPath = null;
+        try
+        {
+            patch.BeginWrite.ToPath(tempPath).WithLoadOrder(writeOrder).WithDataFolder(dataFolder).Write();
+            if (appending)
+            {
+                backupPath = Path.Combine(directory,
+                    $"{Path.GetFileNameWithoutExtension(outputPath)}.WeaponTweakerBackup-{DateTime.Now:yyyyMMdd-HHmmssfff}{Path.GetExtension(outputPath)}");
+                File.Replace(tempPath, outputPath, backupPath);
+            }
+            else File.Move(tempPath, outputPath);
+            return backupPath;
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            if (Directory.Exists(tempDirectory)) Directory.Delete(tempDirectory);
+        }
+    }
+
+    private static ISkyrimMod OpenMutablePlugin(string path, string dataFolder)
+    {
+        using var header = SkyrimMod.Create(SkyrimRelease.SkyrimSE)
+            .FromPath(path).WithLoadOrder(Array.Empty<ModKey>())
+            .WithDataFolder(dataFolder).Construct();
+        var masters = header.MasterReferences.Select(x => x.Master).ToArray();
+        return SkyrimMod.Create(SkyrimRelease.SkyrimSE)
+            .FromPath(path).WithLoadOrder(masters)
+            .WithDataFolder(dataFolder).Mutable().Construct();
     }
 
     internal static ISkyrimModDisposableGetter OpenPlugin(string path)
