@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.2";
+        Text = "Weapon Tweaker 1.1.3";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -106,63 +106,26 @@ internal sealed class MainForm : Form
         file.DropDownItems.Add("Exit", null, (_, _) => Close());
 
         var settings = new ToolStripMenuItem("Settings");
-        settings.DropDownItems.Add("Set output folder…", null, (_, _) => ChooseOutputFolder());
-        settings.DropDownItems.Add("Use plugin folder for output", null, (_, _) => ClearOutputFolder());
-        settings.DropDownItems.Add(new ToolStripSeparator());
-        settings.DropDownItems.Add("Set MO2 profile folder…", null, (_, _) => ChooseMo2ProfileFolder());
-        settings.DropDownItems.Add("Use automatic load-order detection", null, (_, _) => ClearMo2ProfileFolder());
+        settings.Click += (_, _) => ShowSettings();
         menu.Items.Add(file);
         menu.Items.Add(settings);
         return menu;
     }
 
-    private void ChooseOutputFolder()
+    private void ShowSettings()
     {
-        using var dialog = new FolderBrowserDialog
-        {
-            Description = "Choose the default folder for Weapon Tweaker patches",
-            UseDescriptionForTitle = true,
-            SelectedPath = Directory.Exists(_settings.OutputDirectory) ? _settings.OutputDirectory : ""
-        };
+        using var dialog = new SettingsForm(_settings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        _settings.OutputDirectory = dialog.SelectedPath;
-        _settings.Save();
-        _status.Text = $"Output folder set to {dialog.SelectedPath}";
-    }
-
-    private void ClearOutputFolder()
-    {
-        _settings.OutputDirectory = null;
-        _settings.Save();
-        _status.Text = "Output folder reset. Patches will default beside the opened plugin.";
-    }
-
-    private void ChooseMo2ProfileFolder()
-    {
-        using var dialog = new FolderBrowserDialog
-        {
-            Description = "Choose the MO2 profile folder that contains plugins.txt and loadorder.txt",
-            UseDescriptionForTitle = true,
-            SelectedPath = Directory.Exists(_settings.Mo2ProfileDirectory) ? _settings.Mo2ProfileDirectory : ""
-        };
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        var pluginsPath = Path.Combine(dialog.SelectedPath, "plugins.txt");
-        if (!File.Exists(pluginsPath))
+        if (dialog.ProfileFolder is not null && !File.Exists(Path.Combine(dialog.ProfileFolder, "plugins.txt")))
         {
             MessageBox.Show(this, "That folder does not contain plugins.txt. Choose a folder inside MO2's profiles directory.",
                 "Not an MO2 profile", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        _settings.Mo2ProfileDirectory = dialog.SelectedPath;
+        _settings.OutputDirectory = dialog.OutputFolder;
+        _settings.Mo2ProfileDirectory = dialog.ProfileFolder;
         _settings.Save();
-        _status.Text = $"MO2 profile set to {dialog.SelectedPath}";
-    }
-
-    private void ClearMo2ProfileFolder()
-    {
-        _settings.Mo2ProfileDirectory = null;
-        _settings.Save();
-        _status.Text = "MO2 profile reset. Load-order mode will use automatic detection.";
+        _status.Text = "Settings saved. Blank fields use the default.";
     }
 
     private void BuildGrid()
@@ -257,6 +220,14 @@ internal sealed class MainForm : Form
                     var automaticKeys = automatic.LoadOrder.ListedOrder
                         .Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
                     var profileKeys = ReadMo2ProfileLoadOrder(_settings.Mo2ProfileDirectory!, automaticKeys);
+                    dataFolder = ResolveMo2DataFolder(_settings.Mo2ProfileDirectory!) ?? dataFolder;
+                    var missing = profileKeys.Where(x => !File.Exists(Path.Combine(dataFolder, x.FileName.String))).ToArray();
+                    if (missing.Length > 0)
+                    {
+                        var sample = string.Join("\n", missing.Take(8).Select(x => "• " + x.FileName.String));
+                        throw new FileNotFoundException(
+                            $"{missing.Length:N0} active profile plugins are not visible in:\n{dataFolder}\n\n{sample}\n\nLaunch Weapon Tweaker through this MO2 instance, then try again.");
+                    }
                     using var configured = GameEnvironment.Typical
                         .Builder<ISkyrimMod, ISkyrimModGetter>(GameRelease.SkyrimSE)
                         .WithTargetDataFolder(dataFolder)
@@ -325,6 +296,25 @@ internal sealed class MainForm : Form
         }
         if (result.Count == 0) throw new InvalidDataException("The configured MO2 profile contains no active plugins.");
         return result.ToArray();
+    }
+
+    internal static string? ResolveMo2DataFolder(string profileDirectory)
+    {
+        var profilesDirectory = Directory.GetParent(Path.GetFullPath(profileDirectory));
+        var instanceDirectory = profilesDirectory?.Parent?.FullName;
+        if (instanceDirectory is null) return null;
+        var iniPath = Path.Combine(instanceDirectory, "ModOrganizer.ini");
+        if (!File.Exists(iniPath)) return null;
+        var line = File.ReadLines(iniPath).FirstOrDefault(x => x.StartsWith("gamePath=", StringComparison.OrdinalIgnoreCase));
+        if (line is null) return null;
+        var value = line[(line.IndexOf('=') + 1)..].Trim();
+        const string prefix = "@ByteArray(";
+        if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && value.EndsWith(')'))
+            value = value[prefix.Length..^1];
+        value = value.Replace("\\\\", "\\");
+        if (!Path.IsPathRooted(value)) value = Path.Combine(instanceDirectory, value);
+        var dataFolder = Path.Combine(value, "Data");
+        return Directory.Exists(dataFolder) ? Path.GetFullPath(dataFolder) : null;
     }
 
     private void PopulateRows(IEnumerable<IWeaponGetter> weapons)

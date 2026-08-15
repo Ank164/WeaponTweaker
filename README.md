@@ -34,6 +34,12 @@ The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
 
+### 1.1.3
+
+- Replaced the confusing Settings submenu with one dialog containing `Output folder` and `Profile folder` fields; blank fields use defaults.
+- Fixed portable MO2 profiles loading against the wrong Skyrim Data folder by resolving the selected instance's `ModOrganizer.ini` game path.
+- Added an explicit error when active profile plugins are not visible through MO2 instead of silently displaying vanilla-only weapons.
+
 ### 1.1.2
 
 - Added a persistent MO2 profile-folder setting for reliable `plugins.txt` and `loadorder.txt` discovery with portable and multi-instance MO2 setups.

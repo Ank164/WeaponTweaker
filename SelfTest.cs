@@ -55,6 +55,14 @@ internal static class SelfTest
             File.WriteAllLines(Path.Combine(profile, "loadorder.txt"), ["Skyrim.esm", "InactiveWeapons.esp", "ActiveWeapons.esp"]);
             var parsed = MainForm.ReadMo2ProfileLoadOrder(profile, [ModKey.FromFileName("Skyrim.esm")]);
             ok &= parsed.Select(x => x.FileName.String).SequenceEqual(["Skyrim.esm", "ActiveWeapons.esp"]);
+
+            var instance = Path.Combine(folder, "MO2");
+            var instanceProfile = Path.Combine(instance, "profiles", "Test Profile");
+            var game = Path.Combine(instance, "Stock Game");
+            Directory.CreateDirectory(instanceProfile);
+            Directory.CreateDirectory(Path.Combine(game, "Data"));
+            File.WriteAllText(Path.Combine(instance, "ModOrganizer.ini"), $"gamePath=@ByteArray({game.Replace("\\", "\\\\")})");
+            ok &= MainForm.ResolveMo2DataFolder(instanceProfile) == Path.Combine(game, "Data");
             Console.WriteLine(ok ? "SELF-TEST PASSED" : "SELF-TEST FAILED");
             return ok ? 0 : 1;
         }
