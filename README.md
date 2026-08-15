@@ -4,6 +4,8 @@ A focused Skyrim Special Edition plugin editor for simple weapon stat changes wi
 
 Weapon Tweaker provides a searchable weapon list and edits damage, speed, reach, weight, value, and critical damage. It protects the original plugin and writes only changed records into a new ESL-flagged ESP patch.
 
+It can open one plugin for a fast focused edit, or optionally load every winning weapon from the active MO2 load order. A persistent output-folder setting controls where new patches are offered for saving.
+
 ## MO2 setup
 
 1. Add `WeaponTweaker.exe` as an executable in Mod Organizer 2.
@@ -31,6 +33,16 @@ dotnet publish -c Release -o Distribution
 The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
+
+### 1.1.1
+
+- Added ascending and descending sorting for every grid column.
+
+### 1.1.0
+
+- Added a Settings menu with a persistent default output folder.
+- Added opt-in loading of all winning weapons from the active MO2 load order.
+- Added a custom application icon.
 
 ### 1.0.1
 

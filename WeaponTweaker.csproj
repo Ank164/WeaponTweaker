@@ -10,8 +10,9 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>WeaponTweaker</AssemblyName>
-    <Version>1.0.1</Version>
+    <Version>1.1.1</Version>
     <DebugType>none</DebugType>
+    <ApplicationIcon>Assets\WeaponTweaker.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.53.1" />

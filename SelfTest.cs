@@ -38,7 +38,8 @@ internal static class SelfTest
                 Weight = 7, OriginalWeight = 8, Value = 80, OriginalValue = 50,
                 CriticalDamage = 12, OriginalCriticalDamage = 5
             };
-            MainForm.WritePatch(patchPath, [row], loaded, folder);
+            var order = loaded.MasterReferences.Select(x => x.Master).Append(loaded.ModKey).ToArray();
+            MainForm.WritePatch(patchPath, [row], order, folder);
 
             using var result = MainForm.OpenPlugin(patchPath);
             var patched = result.Weapons.Single();
