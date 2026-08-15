@@ -36,6 +36,11 @@ The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
 
+### 1.2.1
+
+- Fixed append mode reordering an existing patch's masters, which changed the raw master indices encoded in its existing records.
+- Existing master order is now immutable during append; newly required masters are added after it.
+
 ### 1.2.0
 
 - Added safe appending to existing patch plugins while preserving their current records and header flags.

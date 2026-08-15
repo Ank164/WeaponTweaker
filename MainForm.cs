@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.2.0";
+        Text = "Weapon Tweaker 1.2.1";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -490,7 +490,9 @@ internal sealed class MainForm : Form
             weapon.Data.Reach = row.Reach;
             weapon.Critical.Damage = checked((ushort)row.CriticalDamage);
         }
-        var writeOrder = loadOrder.Concat(patch.MasterReferences.Select(x => x.Master)).Distinct().ToArray();
+        // Existing master positions are save-sensitive. Preserve their exact order and
+        // append only newly needed candidates so existing raw FormID master indices do not move.
+        var writeOrder = patch.MasterReferences.Select(x => x.Master).Concat(loadOrder).Distinct().ToArray();
         var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
         var tempDirectory = Path.Combine(directory, $".WeaponTweaker-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDirectory);
