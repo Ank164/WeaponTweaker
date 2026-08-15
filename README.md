@@ -1,5 +1,9 @@
 # Weapon Tweaker
 
+## 1.2.2
+
+- Manually opened plugins now resolve to MO2's active Data version when a profile is configured. This prevents patches from using a shadowed pre-ESL copy whose compacted FormIDs differ from the version used in game.
+
 A focused Skyrim Special Edition plugin editor for simple weapon stat changes without xEdit.
 
 Weapon Tweaker provides a searchable weapon list and edits damage, speed, reach, weight, value, and critical damage. It protects the original plugin and writes only changed records into a new ESL-flagged ESP patch.
@@ -35,6 +39,11 @@ dotnet publish -c Release -o Distribution
 The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
+
+### 1.2.1
+
+- Fixed append mode reordering an existing patch's masters, which changed the raw master indices encoded in its existing records.
+- Existing master order is now immutable during append; newly required masters are added after it.
 
 ### 1.2.0
 
