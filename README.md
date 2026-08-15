@@ -34,6 +34,11 @@ The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
 
+### 1.1.2
+
+- Added a persistent MO2 profile-folder setting for reliable `plugins.txt` and `loadorder.txt` discovery with portable and multi-instance MO2 setups.
+- Load-order mode now reports how many active plugins it actually loaded.
+
 ### 1.1.1
 
 - Added ascending and descending sorting for every grid column.

@@ -48,6 +48,13 @@ internal static class SelfTest
                      patched.BasicStats?.Value == 80 && patched.Critical?.Damage == 12 &&
                      result.IsSmallMaster && result.MasterReferences.Any(x => x.Master == master.ModKey) &&
                      File.Exists(sourcePath) && File.Exists(masterPath);
+
+            var profile = Path.Combine(folder, "Profile");
+            Directory.CreateDirectory(profile);
+            File.WriteAllLines(Path.Combine(profile, "plugins.txt"), ["# generated", "*ActiveWeapons.esp", "InactiveWeapons.esp"]);
+            File.WriteAllLines(Path.Combine(profile, "loadorder.txt"), ["Skyrim.esm", "InactiveWeapons.esp", "ActiveWeapons.esp"]);
+            var parsed = MainForm.ReadMo2ProfileLoadOrder(profile, [ModKey.FromFileName("Skyrim.esm")]);
+            ok &= parsed.Select(x => x.FileName.String).SequenceEqual(["Skyrim.esm", "ActiveWeapons.esp"]);
             Console.WriteLine(ok ? "SELF-TEST PASSED" : "SELF-TEST FAILED");
             return ok ? 0 : 1;
         }

@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.1";
+        Text = "Weapon Tweaker 1.1.2";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -108,6 +108,9 @@ internal sealed class MainForm : Form
         var settings = new ToolStripMenuItem("Settings");
         settings.DropDownItems.Add("Set output folder…", null, (_, _) => ChooseOutputFolder());
         settings.DropDownItems.Add("Use plugin folder for output", null, (_, _) => ClearOutputFolder());
+        settings.DropDownItems.Add(new ToolStripSeparator());
+        settings.DropDownItems.Add("Set MO2 profile folder…", null, (_, _) => ChooseMo2ProfileFolder());
+        settings.DropDownItems.Add("Use automatic load-order detection", null, (_, _) => ClearMo2ProfileFolder());
         menu.Items.Add(file);
         menu.Items.Add(settings);
         return menu;
@@ -132,6 +135,34 @@ internal sealed class MainForm : Form
         _settings.OutputDirectory = null;
         _settings.Save();
         _status.Text = "Output folder reset. Patches will default beside the opened plugin.";
+    }
+
+    private void ChooseMo2ProfileFolder()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Choose the MO2 profile folder that contains plugins.txt and loadorder.txt",
+            UseDescriptionForTitle = true,
+            SelectedPath = Directory.Exists(_settings.Mo2ProfileDirectory) ? _settings.Mo2ProfileDirectory : ""
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var pluginsPath = Path.Combine(dialog.SelectedPath, "plugins.txt");
+        if (!File.Exists(pluginsPath))
+        {
+            MessageBox.Show(this, "That folder does not contain plugins.txt. Choose a folder inside MO2's profiles directory.",
+                "Not an MO2 profile", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        _settings.Mo2ProfileDirectory = dialog.SelectedPath;
+        _settings.Save();
+        _status.Text = $"MO2 profile set to {dialog.SelectedPath}";
+    }
+
+    private void ClearMo2ProfileFolder()
+    {
+        _settings.Mo2ProfileDirectory = null;
+        _settings.Save();
+        _status.Text = "MO2 profile reset. Load-order mode will use automatic detection.";
     }
 
     private void BuildGrid()
@@ -207,8 +238,11 @@ internal sealed class MainForm : Form
 
     private async Task LoadAllWeaponsAsync()
     {
+        var profileDescription = Directory.Exists(_settings.Mo2ProfileDirectory)
+            ? $"Configured profile:\n{_settings.Mo2ProfileDirectory}"
+            : "No MO2 profile is configured; automatic detection will be used.";
         var answer = MessageBox.Show(this,
-            "This will load every winning weapon record from the active MO2 load order. It can take a while on large modlists. Continue?",
+            $"This will load every winning weapon record from the active MO2 load order. It can take a while on large modlists.\n\n{profileDescription}\n\nContinue?",
             "Load all weapons", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
         try
@@ -216,11 +250,21 @@ internal sealed class MainForm : Form
             ToggleBusy(true, "Reading the active MO2 load order…");
             var result = await Task.Run(() =>
             {
-                using var env = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
-                var weapons = env.LoadOrder.PriorityOrder.Weapon().WinningOverrides()
-                    .Where(x => !x.IsDeleted).Select(x => (IWeaponGetter)x.DeepCopy()).ToArray();
-                var order = env.LoadOrder.ListedOrder.Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
-                return (weapons, order, dataFolder: env.DataFolderPath.ToString());
+                using var automatic = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
+                var dataFolder = automatic.DataFolderPath.ToString();
+                if (Directory.Exists(_settings.Mo2ProfileDirectory))
+                {
+                    var automaticKeys = automatic.LoadOrder.ListedOrder
+                        .Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
+                    var profileKeys = ReadMo2ProfileLoadOrder(_settings.Mo2ProfileDirectory!, automaticKeys);
+                    using var configured = GameEnvironment.Typical
+                        .Builder<ISkyrimMod, ISkyrimModGetter>(GameRelease.SkyrimSE)
+                        .WithTargetDataFolder(dataFolder)
+                        .WithLoadOrder(profileKeys)
+                        .Build();
+                    return SnapshotWeapons(configured, dataFolder);
+                }
+                return SnapshotWeapons(automatic, dataFolder);
             });
             _source?.Dispose();
             _source = null;
@@ -231,7 +275,7 @@ internal sealed class MainForm : Form
             PopulateRows(result.weapons);
             _pluginLabel.Text = "Active MO2 load order — winning weapon records";
             ApplyFilter();
-            _status.Text = $"{_all.Count:N0} winning weapon records loaded from MO2.";
+            _status.Text = $"{_all.Count:N0} winning weapon records loaded from {result.order.Length:N0} active plugins.";
         }
         catch (Exception ex)
         {
@@ -240,6 +284,47 @@ internal sealed class MainForm : Form
             _status.Text = "The active MO2 load order could not be loaded.";
         }
         finally { ToggleBusy(false); }
+    }
+
+    private static (IWeaponGetter[] weapons, ModKey[] order, string dataFolder) SnapshotWeapons(
+        IGameEnvironment<ISkyrimMod, ISkyrimModGetter> environment, string dataFolder)
+    {
+        var weapons = environment.LoadOrder.PriorityOrder.Weapon().WinningOverrides()
+            .Where(x => !x.IsDeleted).Select(x => (IWeaponGetter)x.DeepCopy()).ToArray();
+        var order = environment.LoadOrder.ListedOrder
+            .Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
+        return (weapons, order, dataFolder);
+    }
+
+    internal static ModKey[] ReadMo2ProfileLoadOrder(string profileDirectory, IReadOnlyCollection<ModKey> automaticKeys)
+    {
+        var pluginsPath = Path.Combine(profileDirectory, "plugins.txt");
+        if (!File.Exists(pluginsPath)) throw new FileNotFoundException("The configured MO2 profile has no plugins.txt.", pluginsPath);
+
+        var active = File.ReadLines(pluginsPath)
+            .Select(x => x.Trim())
+            .Where(x => x.StartsWith('*') && x.Length > 1)
+            .Select(x => x[1..].Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var automatic = automaticKeys.Select(x => x.FileName.String).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var loadOrderPath = Path.Combine(profileDirectory, "loadorder.txt");
+        var orderedNames = File.Exists(loadOrderPath)
+            ? File.ReadLines(loadOrderPath).Select(x => x.Trim()).Where(x => x.Length > 0 && !x.StartsWith('#'))
+            : automaticKeys.Select(x => x.FileName.String).Concat(active);
+
+        var result = new List<ModKey>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in orderedNames)
+        {
+            if ((!active.Contains(name) && !automatic.Contains(name)) || !seen.Add(name)) continue;
+            try { result.Add(ModKey.FromFileName(name)); } catch { }
+        }
+        foreach (var name in active.Where(seen.Add))
+        {
+            try { result.Add(ModKey.FromFileName(name)); } catch { }
+        }
+        if (result.Count == 0) throw new InvalidDataException("The configured MO2 profile contains no active plugins.");
+        return result.ToArray();
     }
 
     private void PopulateRows(IEnumerable<IWeaponGetter> weapons)
