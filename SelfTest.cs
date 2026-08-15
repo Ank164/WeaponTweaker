@@ -91,6 +91,12 @@ internal static class SelfTest
             Directory.CreateDirectory(Path.Combine(game, "Data"));
             File.WriteAllText(Path.Combine(instance, "ModOrganizer.ini"), $"gamePath=@ByteArray({game.Replace("\\", "\\\\")})");
             ok &= MainForm.ResolveMo2DataFolder(instanceProfile) == Path.Combine(game, "Data");
+            var selectedCopy = Path.Combine(folder, "Shadowed", "ActiveWeapons.esp");
+            Directory.CreateDirectory(Path.GetDirectoryName(selectedCopy)!);
+            File.WriteAllText(selectedCopy, "shadowed");
+            var activeCopy = Path.Combine(game, "Data", "ActiveWeapons.esp");
+            File.WriteAllText(activeCopy, "active");
+            ok &= MainForm.ResolveActivePluginPath(selectedCopy, instanceProfile) == Path.GetFullPath(activeCopy);
             Console.WriteLine(ok ? "SELF-TEST PASSED" : "SELF-TEST FAILED");
             return ok ? 0 : 1;
         }

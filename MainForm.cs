@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.2.1";
+        Text = "Weapon Tweaker 1.2.2";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -179,15 +179,18 @@ internal sealed class MainForm : Form
         try
         {
             ToggleBusy(true, "Reading weapons…");
-            var mod = await Task.Run(() => OpenPlugin(path));
+            var resolvedPath = ResolveActivePluginPath(path, _settings.Mo2ProfileDirectory);
+            var mod = await Task.Run(() => OpenPlugin(resolvedPath));
             _source?.Dispose();
             _source = mod;
-            _sourcePath = Path.GetFullPath(path);
+            _sourcePath = resolvedPath;
             _dataFolder = Path.GetDirectoryName(_sourcePath)!;
             _writeLoadOrder = mod.MasterReferences.Select(x => x.Master).Append(mod.ModKey).ToArray();
             _suggestedPatchName = Path.GetFileNameWithoutExtension(_sourcePath) + " - Weapon Tweaks.esp";
             PopulateRows(mod.Weapons);
-            _pluginLabel.Text = _sourcePath;
+            _pluginLabel.Text = Path.GetFullPath(path).Equals(_sourcePath, StringComparison.OrdinalIgnoreCase)
+                ? _sourcePath
+                : $"MO2 active version: {_sourcePath}";
             ApplyFilter();
             _status.Text = $"{_all.Count:N0} weapon records loaded. Edit a value, then save a patch.";
         }
@@ -315,6 +318,18 @@ internal sealed class MainForm : Form
         if (!Path.IsPathRooted(value)) value = Path.Combine(instanceDirectory, value);
         var dataFolder = Path.Combine(value, "Data");
         return Directory.Exists(dataFolder) ? Path.GetFullPath(dataFolder) : null;
+    }
+
+    internal static string ResolveActivePluginPath(string selectedPath, string? profileDirectory)
+    {
+        var fullSelectedPath = Path.GetFullPath(selectedPath);
+        if (!Directory.Exists(profileDirectory)) return fullSelectedPath;
+
+        var dataFolder = ResolveMo2DataFolder(profileDirectory!);
+        if (string.IsNullOrWhiteSpace(dataFolder)) return fullSelectedPath;
+
+        var activePath = Path.Combine(dataFolder, Path.GetFileName(fullSelectedPath));
+        return File.Exists(activePath) ? Path.GetFullPath(activePath) : fullSelectedPath;
     }
 
     private void PopulateRows(IEnumerable<IWeaponGetter> weapons)
