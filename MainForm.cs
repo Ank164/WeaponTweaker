@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.1";
+        Text = "Weapon Tweaker 1.2.0";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -106,32 +106,26 @@ internal sealed class MainForm : Form
         file.DropDownItems.Add("Exit", null, (_, _) => Close());
 
         var settings = new ToolStripMenuItem("Settings");
-        settings.DropDownItems.Add("Set output folder…", null, (_, _) => ChooseOutputFolder());
-        settings.DropDownItems.Add("Use plugin folder for output", null, (_, _) => ClearOutputFolder());
+        settings.Click += (_, _) => ShowSettings();
         menu.Items.Add(file);
         menu.Items.Add(settings);
         return menu;
     }
 
-    private void ChooseOutputFolder()
+    private void ShowSettings()
     {
-        using var dialog = new FolderBrowserDialog
-        {
-            Description = "Choose the default folder for Weapon Tweaker patches",
-            UseDescriptionForTitle = true,
-            SelectedPath = Directory.Exists(_settings.OutputDirectory) ? _settings.OutputDirectory : ""
-        };
+        using var dialog = new SettingsForm(_settings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        _settings.OutputDirectory = dialog.SelectedPath;
+        if (dialog.ProfileFolder is not null && !File.Exists(Path.Combine(dialog.ProfileFolder, "plugins.txt")))
+        {
+            MessageBox.Show(this, "That folder does not contain plugins.txt. Choose a folder inside MO2's profiles directory.",
+                "Not an MO2 profile", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        _settings.OutputDirectory = dialog.OutputFolder;
+        _settings.Mo2ProfileDirectory = dialog.ProfileFolder;
         _settings.Save();
-        _status.Text = $"Output folder set to {dialog.SelectedPath}";
-    }
-
-    private void ClearOutputFolder()
-    {
-        _settings.OutputDirectory = null;
-        _settings.Save();
-        _status.Text = "Output folder reset. Patches will default beside the opened plugin.";
+        _status.Text = "Settings saved. Blank fields use the default.";
     }
 
     private void BuildGrid()
@@ -207,8 +201,11 @@ internal sealed class MainForm : Form
 
     private async Task LoadAllWeaponsAsync()
     {
+        var profileDescription = Directory.Exists(_settings.Mo2ProfileDirectory)
+            ? $"Configured profile:\n{_settings.Mo2ProfileDirectory}"
+            : "No MO2 profile is configured; automatic detection will be used.";
         var answer = MessageBox.Show(this,
-            "This will load every winning weapon record from the active MO2 load order. It can take a while on large modlists. Continue?",
+            $"This will load every winning weapon record from the active MO2 load order. It can take a while on large modlists.\n\n{profileDescription}\n\nContinue?",
             "Load all weapons", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
         try
@@ -216,11 +213,29 @@ internal sealed class MainForm : Form
             ToggleBusy(true, "Reading the active MO2 load order…");
             var result = await Task.Run(() =>
             {
-                using var env = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
-                var weapons = env.LoadOrder.PriorityOrder.Weapon().WinningOverrides()
-                    .Where(x => !x.IsDeleted).Select(x => (IWeaponGetter)x.DeepCopy()).ToArray();
-                var order = env.LoadOrder.ListedOrder.Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
-                return (weapons, order, dataFolder: env.DataFolderPath.ToString());
+                using var automatic = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
+                var dataFolder = automatic.DataFolderPath.ToString();
+                if (Directory.Exists(_settings.Mo2ProfileDirectory))
+                {
+                    var automaticKeys = automatic.LoadOrder.ListedOrder
+                        .Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
+                    var profileKeys = ReadMo2ProfileLoadOrder(_settings.Mo2ProfileDirectory!, automaticKeys);
+                    dataFolder = ResolveMo2DataFolder(_settings.Mo2ProfileDirectory!) ?? dataFolder;
+                    var missing = profileKeys.Where(x => !File.Exists(Path.Combine(dataFolder, x.FileName.String))).ToArray();
+                    if (missing.Length > 0)
+                    {
+                        var sample = string.Join("\n", missing.Take(8).Select(x => "• " + x.FileName.String));
+                        throw new FileNotFoundException(
+                            $"{missing.Length:N0} active profile plugins are not visible in:\n{dataFolder}\n\n{sample}\n\nLaunch Weapon Tweaker through this MO2 instance, then try again.");
+                    }
+                    using var configured = GameEnvironment.Typical
+                        .Builder<ISkyrimMod, ISkyrimModGetter>(GameRelease.SkyrimSE)
+                        .WithTargetDataFolder(dataFolder)
+                        .WithLoadOrder(profileKeys)
+                        .Build();
+                    return SnapshotWeapons(configured, dataFolder);
+                }
+                return SnapshotWeapons(automatic, dataFolder);
             });
             _source?.Dispose();
             _source = null;
@@ -231,7 +246,7 @@ internal sealed class MainForm : Form
             PopulateRows(result.weapons);
             _pluginLabel.Text = "Active MO2 load order — winning weapon records";
             ApplyFilter();
-            _status.Text = $"{_all.Count:N0} winning weapon records loaded from MO2.";
+            _status.Text = $"{_all.Count:N0} winning weapon records loaded from {result.order.Length:N0} active plugins.";
         }
         catch (Exception ex)
         {
@@ -240,6 +255,66 @@ internal sealed class MainForm : Form
             _status.Text = "The active MO2 load order could not be loaded.";
         }
         finally { ToggleBusy(false); }
+    }
+
+    private static (IWeaponGetter[] weapons, ModKey[] order, string dataFolder) SnapshotWeapons(
+        IGameEnvironment<ISkyrimMod, ISkyrimModGetter> environment, string dataFolder)
+    {
+        var weapons = environment.LoadOrder.PriorityOrder.Weapon().WinningOverrides()
+            .Where(x => !x.IsDeleted).Select(x => (IWeaponGetter)x.DeepCopy()).ToArray();
+        var order = environment.LoadOrder.ListedOrder
+            .Where(x => x.Mod is not null).Select(x => x.Mod!.ModKey).ToArray();
+        return (weapons, order, dataFolder);
+    }
+
+    internal static ModKey[] ReadMo2ProfileLoadOrder(string profileDirectory, IReadOnlyCollection<ModKey> automaticKeys)
+    {
+        var pluginsPath = Path.Combine(profileDirectory, "plugins.txt");
+        if (!File.Exists(pluginsPath)) throw new FileNotFoundException("The configured MO2 profile has no plugins.txt.", pluginsPath);
+
+        var active = File.ReadLines(pluginsPath)
+            .Select(x => x.Trim())
+            .Where(x => x.StartsWith('*') && x.Length > 1)
+            .Select(x => x[1..].Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var automatic = automaticKeys.Select(x => x.FileName.String).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var loadOrderPath = Path.Combine(profileDirectory, "loadorder.txt");
+        var orderedNames = File.Exists(loadOrderPath)
+            ? File.ReadLines(loadOrderPath).Select(x => x.Trim()).Where(x => x.Length > 0 && !x.StartsWith('#'))
+            : automaticKeys.Select(x => x.FileName.String).Concat(active);
+
+        var result = new List<ModKey>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in orderedNames)
+        {
+            if ((!active.Contains(name) && !automatic.Contains(name)) || !seen.Add(name)) continue;
+            try { result.Add(ModKey.FromFileName(name)); } catch { }
+        }
+        foreach (var name in active.Where(seen.Add))
+        {
+            try { result.Add(ModKey.FromFileName(name)); } catch { }
+        }
+        if (result.Count == 0) throw new InvalidDataException("The configured MO2 profile contains no active plugins.");
+        return result.ToArray();
+    }
+
+    internal static string? ResolveMo2DataFolder(string profileDirectory)
+    {
+        var profilesDirectory = Directory.GetParent(Path.GetFullPath(profileDirectory));
+        var instanceDirectory = profilesDirectory?.Parent?.FullName;
+        if (instanceDirectory is null) return null;
+        var iniPath = Path.Combine(instanceDirectory, "ModOrganizer.ini");
+        if (!File.Exists(iniPath)) return null;
+        var line = File.ReadLines(iniPath).FirstOrDefault(x => x.StartsWith("gamePath=", StringComparison.OrdinalIgnoreCase));
+        if (line is null) return null;
+        var value = line[(line.IndexOf('=') + 1)..].Trim();
+        const string prefix = "@ByteArray(";
+        if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && value.EndsWith(')'))
+            value = value[prefix.Length..^1];
+        value = value.Replace("\\\\", "\\");
+        if (!Path.IsPathRooted(value)) value = Path.Combine(instanceDirectory, value);
+        var dataFolder = Path.Combine(value, "Data");
+        return Directory.Exists(dataFolder) ? Path.GetFullPath(dataFolder) : null;
     }
 
     private void PopulateRows(IEnumerable<IWeaponGetter> weapons)
@@ -364,7 +439,8 @@ internal sealed class MainForm : Form
         using var dialog = new SaveFileDialog
         {
             Filter = "Skyrim plugin (*.esp)|*.esp", FileName = _suggestedPatchName,
-            InitialDirectory = initialDirectory, Title = "Save weapon tweak patch"
+            InitialDirectory = initialDirectory, Title = "Create or append to a weapon tweak patch",
+            OverwritePrompt = false
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         if (_sourcePath is not null && Path.GetFullPath(dialog.FileName).Equals(_sourcePath, StringComparison.OrdinalIgnoreCase))
@@ -372,12 +448,19 @@ internal sealed class MainForm : Form
             MessageBox.Show(this, "Choose a different filename. Weapon Tweaker never overwrites the source plugin.", "Source plugin protected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+        var appending = File.Exists(dialog.FileName);
+        if (appending && MessageBox.Show(this,
+                $"Append these {changed.Length:N0} changed weapon record{(changed.Length == 1 ? "" : "s")} to the existing patch?\n\n{dialog.FileName}\n\nThe existing plugin will be backed up first.",
+                "Append to existing patch", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         try
         {
-            ToggleBusy(true, "Writing patch…");
-            await Task.Run(() => WritePatch(dialog.FileName, changed, _writeLoadOrder, _dataFolder));
-            _status.Text = $"Saved {changed.Length:N0} weapon overrides to {dialog.FileName}";
-            MessageBox.Show(this, $"Patch created successfully.\n\n{dialog.FileName}\n\nEnable it after the source plugin in MO2.", "Patch saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ToggleBusy(true, appending ? "Appending to patch…" : "Writing patch…");
+            var backupPath = await Task.Run(() => WritePatch(dialog.FileName, changed, _writeLoadOrder, _dataFolder));
+            _status.Text = $"{(appending ? "Appended" : "Saved")} {changed.Length:N0} weapon overrides to {dialog.FileName}";
+            var backupText = backupPath is null ? "" : $"\n\nBackup created:\n{backupPath}";
+            MessageBox.Show(this,
+                $"Patch {(appending ? "updated" : "created")} successfully.\n\n{dialog.FileName}{backupText}\n\nEnable it after the source plugin in MO2.",
+                appending ? "Patch updated" : "Patch saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
@@ -387,10 +470,13 @@ internal sealed class MainForm : Form
         finally { ToggleBusy(false); }
     }
 
-    internal static void WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, IReadOnlyCollection<ModKey> loadOrder, string dataFolder)
+    internal static string? WritePatch(string outputPath, IReadOnlyCollection<WeaponRow> changed, IReadOnlyCollection<ModKey> loadOrder, string dataFolder)
     {
         var modKey = ModKey.FromFileName(Path.GetFileName(outputPath));
-        var patch = new SkyrimMod(modKey, SkyrimRelease.SkyrimSE) { IsSmallMaster = true };
+        var appending = File.Exists(outputPath);
+        var patch = appending
+            ? OpenMutablePlugin(outputPath, dataFolder)
+            : new SkyrimMod(modKey, SkyrimRelease.SkyrimSE) { IsSmallMaster = true };
         foreach (var row in changed)
         {
             var weapon = patch.Weapons.GetOrAddAsOverride(row.Source);
@@ -404,7 +490,40 @@ internal sealed class MainForm : Form
             weapon.Data.Reach = row.Reach;
             weapon.Critical.Damage = checked((ushort)row.CriticalDamage);
         }
-        patch.BeginWrite.ToPath(outputPath).WithLoadOrder(loadOrder).WithDataFolder(dataFolder).Write();
+        var writeOrder = loadOrder.Concat(patch.MasterReferences.Select(x => x.Master)).Distinct().ToArray();
+        var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
+        var tempDirectory = Path.Combine(directory, $".WeaponTweaker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        var tempPath = Path.Combine(tempDirectory, Path.GetFileName(outputPath));
+        string? backupPath = null;
+        try
+        {
+            patch.BeginWrite.ToPath(tempPath).WithLoadOrder(writeOrder).WithDataFolder(dataFolder).Write();
+            if (appending)
+            {
+                backupPath = Path.Combine(directory,
+                    $"{Path.GetFileNameWithoutExtension(outputPath)}.WeaponTweakerBackup-{DateTime.Now:yyyyMMdd-HHmmssfff}{Path.GetExtension(outputPath)}");
+                File.Replace(tempPath, outputPath, backupPath);
+            }
+            else File.Move(tempPath, outputPath);
+            return backupPath;
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            if (Directory.Exists(tempDirectory)) Directory.Delete(tempDirectory);
+        }
+    }
+
+    private static ISkyrimMod OpenMutablePlugin(string path, string dataFolder)
+    {
+        using var header = SkyrimMod.Create(SkyrimRelease.SkyrimSE)
+            .FromPath(path).WithLoadOrder(Array.Empty<ModKey>())
+            .WithDataFolder(dataFolder).Construct();
+        var masters = header.MasterReferences.Select(x => x.Master).ToArray();
+        return SkyrimMod.Create(SkyrimRelease.SkyrimSE)
+            .FromPath(path).WithLoadOrder(masters)
+            .WithDataFolder(dataFolder).Mutable().Construct();
     }
 
     internal static ISkyrimModDisposableGetter OpenPlugin(string path)

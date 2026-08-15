@@ -5,6 +5,7 @@ namespace WeaponTweaker;
 internal sealed class AppSettings
 {
     public string? OutputDirectory { get; set; }
+    public string? Mo2ProfileDirectory { get; set; }
 
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
