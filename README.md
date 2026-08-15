@@ -34,6 +34,10 @@ The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
 
 ## Changelog
 
+### 1.1.1
+
+- Added ascending and descending sorting for every grid column.
+
 ### 1.1.0
 
 - Added a Settings menu with a persistent default output folder.

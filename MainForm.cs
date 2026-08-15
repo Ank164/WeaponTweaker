@@ -27,10 +27,12 @@ internal sealed class MainForm : Form
     private ModKey[] _writeLoadOrder = [];
     private string? _dataFolder;
     private string _suggestedPatchName = "Weapon Tweaks.esp";
+    private string? _sortProperty;
+    private bool _sortAscending = true;
 
     public MainForm(string? initialPath)
     {
-        Text = "Weapon Tweaker 1.1.0";
+        Text = "Weapon Tweaker 1.1.1";
         Width = 1120;
         Height = 700;
         MinimumSize = new System.Drawing.Size(850, 500);
@@ -80,6 +82,7 @@ internal sealed class MainForm : Form
         _search.TextChanged += (_, _) => ApplyFilter();
         _grid.CellValidating += ValidateCell;
         _grid.CellValueChanged += (_, _) => RefreshChangedState();
+        _grid.ColumnHeaderMouseClick += (_, e) => SortByColumn(e.ColumnIndex);
         _grid.DataError += (_, e) => { e.ThrowException = false; };
         DragEnter += (_, e) => { if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true) e.Effect = DragDropEffects.Copy; };
         DragDrop += async (_, e) =>
@@ -150,8 +153,22 @@ internal sealed class MainForm : Form
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             HeaderText = title, DataPropertyName = property, ReadOnly = readOnly,
-            FillWeight = weight, SortMode = DataGridViewColumnSortMode.Automatic
+            FillWeight = weight, SortMode = DataGridViewColumnSortMode.Programmatic
         });
+    }
+
+    private void SortByColumn(int columnIndex)
+    {
+        _grid.EndEdit();
+        var property = _grid.Columns[columnIndex].DataPropertyName;
+        if (string.IsNullOrEmpty(property)) return;
+        if (_sortProperty == property) _sortAscending = !_sortAscending;
+        else
+        {
+            _sortProperty = property;
+            _sortAscending = true;
+        }
+        ApplyFilter();
     }
 
     private void Browse()
@@ -250,17 +267,54 @@ internal sealed class MainForm : Form
     private void ApplyFilter()
     {
         var query = _search.Text.Trim();
-        var rows = string.IsNullOrEmpty(query) ? _all : _all.Where(x =>
+        IEnumerable<WeaponRow> rows = string.IsNullOrEmpty(query) ? _all : _all.Where(x =>
             x.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
             x.EditorID.Contains(query, StringComparison.OrdinalIgnoreCase) ||
             x.FormKey.ToString().Contains(query, StringComparison.OrdinalIgnoreCase));
+        rows = ApplySort(rows);
         _visible.RaiseListChangedEvents = false;
         _visible.Clear();
         foreach (var row in rows) _visible.Add(row);
         _visible.RaiseListChangedEvents = true;
         _visible.ResetBindings();
+        UpdateSortGlyph();
         PaintChangedRows();
         RefreshChangedState();
+    }
+
+    private IEnumerable<WeaponRow> ApplySort(IEnumerable<WeaponRow> rows)
+    {
+        if (_sortProperty is null) return rows;
+        return (_sortProperty, _sortAscending) switch
+        {
+            (nameof(WeaponRow.Name), true) => rows.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase),
+            (nameof(WeaponRow.Name), false) => rows.OrderByDescending(x => x.Name, StringComparer.CurrentCultureIgnoreCase),
+            (nameof(WeaponRow.EditorID), true) => rows.OrderBy(x => x.EditorID, StringComparer.OrdinalIgnoreCase),
+            (nameof(WeaponRow.EditorID), false) => rows.OrderByDescending(x => x.EditorID, StringComparer.OrdinalIgnoreCase),
+            (nameof(WeaponRow.FormKey), true) => rows.OrderBy(x => x.FormKey.ToString(), StringComparer.OrdinalIgnoreCase),
+            (nameof(WeaponRow.FormKey), false) => rows.OrderByDescending(x => x.FormKey.ToString(), StringComparer.OrdinalIgnoreCase),
+            (nameof(WeaponRow.Damage), true) => rows.OrderBy(x => x.Damage),
+            (nameof(WeaponRow.Damage), false) => rows.OrderByDescending(x => x.Damage),
+            (nameof(WeaponRow.Speed), true) => rows.OrderBy(x => x.Speed),
+            (nameof(WeaponRow.Speed), false) => rows.OrderByDescending(x => x.Speed),
+            (nameof(WeaponRow.Reach), true) => rows.OrderBy(x => x.Reach),
+            (nameof(WeaponRow.Reach), false) => rows.OrderByDescending(x => x.Reach),
+            (nameof(WeaponRow.Weight), true) => rows.OrderBy(x => x.Weight),
+            (nameof(WeaponRow.Weight), false) => rows.OrderByDescending(x => x.Weight),
+            (nameof(WeaponRow.Value), true) => rows.OrderBy(x => x.Value),
+            (nameof(WeaponRow.Value), false) => rows.OrderByDescending(x => x.Value),
+            (nameof(WeaponRow.CriticalDamage), true) => rows.OrderBy(x => x.CriticalDamage),
+            (nameof(WeaponRow.CriticalDamage), false) => rows.OrderByDescending(x => x.CriticalDamage),
+            _ => rows
+        };
+    }
+
+    private void UpdateSortGlyph()
+    {
+        foreach (DataGridViewColumn column in _grid.Columns)
+            column.HeaderCell.SortGlyphDirection = column.DataPropertyName == _sortProperty
+                ? (_sortAscending ? SortOrder.Ascending : SortOrder.Descending)
+                : SortOrder.None;
     }
 
     private void ValidateCell(object? sender, DataGridViewCellValidatingEventArgs e)
