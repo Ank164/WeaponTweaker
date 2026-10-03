@@ -1,0 +1,15 @@
+Third-party content:
+Yes. Bundled third-party code is used under its applicable open-source licenses.
+
+Credits:
+Weapon Tweaker by Ank164. Uses Mutagen.Bethesda.Skyrim by the Mutagen contributors for Skyrim plugin reading and writing, along with the dependencies credited in THIRD-PARTY-NOTICES.md. Microsoft .NET runtime components and their notices are included. Thanks to the Mod Organizer 2 team for the mod management workflow.
+
+Permission settings:
+Write your own (custom)
+
+Custom permissions:
+Weapon Tweaker is licensed under the GNU General Public License version 3 only (GPL-3.0-only).
+You may use, copy, redistribute, and modify this software under the terms of GPL v3. Distributed modifications must identify changes, preserve applicable notices, and provide corresponding source under GPL v3. Bundled third-party components retain their respective copyrights and licenses.
+Source code: https://github.com/Ank164/WeaponTweaker
+The download includes the full license and third-party notices. The matching source archive is provided alongside the executable.
+This software is provided without warranty. See LICENSE for the full terms.

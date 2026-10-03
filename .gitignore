@@ -2,6 +2,7 @@ bin/
 obj/
 Release/
 Distribution/
+Distribution-*/
 .vs/
 *.user
 *.suo

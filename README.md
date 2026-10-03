@@ -28,6 +28,8 @@ The locally deployed executable is located at:
 
 ## Building
 
+Published builds target 64-bit Windows and include the .NET runtime.
+
 Requires the .NET 8 SDK or newer.
 
 ```powershell
@@ -37,6 +39,18 @@ dotnet publish -c Release -o Distribution
 ```
 
 The project uses Mutagen.Bethesda.Skyrim 0.53.1 for plugin reading and writing.
+
+## License and credits
+
+Copyright (C) 2026 Ank164. Weapon Tweaker is licensed under the GNU General Public License version 3 only (GPL-3.0-only). See [LICENSE](LICENSE) for the full terms. It is provided without warranty.
+
+You may use, modify, and redistribute the software under GPL v3. Distributed modifications must preserve the applicable notices and provide corresponding source under GPL v3.
+
+Source: https://github.com/Ank164/WeaponTweaker
+
+Thanks to the Mutagen contributors for the plugin library and the Mod Organizer 2 team for the mod management workflow. Bundled dependency credits and license texts are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and `licenses/`.
+
+When distributing a binary, include `LICENSE`, `README.md`, `THIRD-PARTY-NOTICES.md`, and `licenses/`, and make the exact corresponding Weapon Tweaker source available alongside the download. Dependency versions and upstream source locations are listed in the notices.
 
 ## Changelog
 
